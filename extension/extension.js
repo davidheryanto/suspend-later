@@ -18,7 +18,6 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const POLL_SECONDS = 30;           // fallback re-read; changes normally arrive via D-Bus
 const UNIT_PREFIX = 'suspend-later.';
-const CLI_TIMEOUT_SECONDS = 15;
 const PRESETS = ['30m', '1h', '2h', '3h'];
 const EXTENDS = ['+15m', '+30m', '+1h', '+2h'];
 
@@ -201,12 +200,10 @@ export default class SuspendLaterExtension extends Extension {
         if (this._sleepId)
             Gio.DBus.system.signal_unsubscribe(this._sleepId);
         this._sleepId = 0;
-        // Kill in-flight status reads, but let schedule/cancel calls finish: killing one
-        // between "stop old timer" and "create new timer" would lose the schedule. Their
-        // callbacks see they no longer belong to this lifecycle and do nothing.
-        for (const [p, isAction] of this._procs)
-            if (!isAction)
-                p.force_exit();
+        // Never kill a CLI call, not even a status read: status can cancel a stale
+        // schedule, and killing it midway would release the CLI's lock with a
+        // `systemctl stop` still on its way. Let calls finish; their callbacks see they
+        // belong to an old lifecycle and do nothing.
         this._procs = new Map();
         this._actions = 0;
         this._indicator?.destroy();
@@ -278,16 +275,9 @@ export default class SuspendLaterExtension extends Extension {
         procs.set(proc, isAction);
         if (isAction)
             this._actions++;
-        // Only status reads get a kill-on-timeout; an action is never killed midway
-        // (see disable()). A status read is harmless to kill.
-        let watchdog = isAction ? 0 : GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, CLI_TIMEOUT_SECONDS, () => {
-            watchdog = 0;
-            proc.force_exit();
-            return GLib.SOURCE_REMOVE;
-        });
+        // No kill-on-timeout either (see disable()). A stuck status read only delays
+        // its own result; polls and signals start fresh reads regardless.
         proc.communicate_utf8_async(null, null, (p, res) => {
-            if (watchdog)
-                GLib.Source.remove(watchdog);
             // Ignore a callback from an earlier enable() lifecycle (disabled meanwhile)
             // before touching any counters of the current one.
             if (procs !== this._procs || !procs.delete(p) || !this._indicator)

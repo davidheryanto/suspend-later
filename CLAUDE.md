@@ -10,7 +10,7 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
 - `extension/` — GNOME Shell panel indicator (UUID `suspend-later@davidheryanto`) that only
   spawns the CLI with `--json` and draws the result (same pattern as `../codexbar-gnome`). Must
   stay a thin UI: no timers of its own that suspend, so a broken/disabled extension never loses
-  or fires a schedule. Status reads are skipped while an action is in flight (race).
+  or fires a schedule. Status reads are skipped while an action is in flight, one action runs at a time, and CLI calls are never killed (the CLI holds a lock; killing it can orphan a `systemctl stop`). The CLI and its fire step share one flock.
 - `dev/headless-capture.sh` — throwaway gnome-shell on Xvfb; gate before any logout/login.
   It runs stock GNOME, not Dash to Panel — see `../codexbar-gnome/CLAUDE.md` gotchas
   (D2P flips vertical `St.BoxLayout`s; lock screen disables/enables extensions).
