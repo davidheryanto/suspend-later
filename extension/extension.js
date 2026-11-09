@@ -57,8 +57,17 @@ class Indicator extends PanelMenu.Button {
         box.add_child(this._label);
         this.add_child(box);
 
-        this._header = new PopupMenu.PopupMenuItem('', {reactive: false});
-        this._header.label.add_style_class_name('suspend-later-header');
+        // Header: deadline text, with Cancel beside it while a schedule is active.
+        this._header = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        this._header.label = new St.Label({
+            x_expand: true, y_align: Clutter.ActorAlign.CENTER, style_class: 'suspend-later-header',
+        });
+        this._cancelButton = new St.Button({
+            label: 'Cancel', can_focus: true, style_class: 'button suspend-later-button suspend-later-cancel',
+        });
+        this._cancelButton.connect('clicked', () => ext.run(['cancel']));
+        this._header.add_child(this._header.label);
+        this._header.add_child(this._cancelButton);
         this.menu.addMenuItem(this._header);
         this._note = new PopupMenu.PopupMenuItem('', {reactive: false});
         this._note.label.add_style_class_name('suspend-later-note');
@@ -71,9 +80,6 @@ class Indicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._presetRow);
         this.menu.addMenuItem(this._extendRow);
 
-        this._cancelItem = new PopupMenu.PopupMenuItem('Cancel scheduled suspend');
-        this._cancelItem.connect('activate', () => ext.run(['cancel']));
-        this.menu.addMenuItem(this._cancelItem);
 
         this.menu.connect('open-state-changed', (_m, open) => {
             if (open)
@@ -108,12 +114,12 @@ class Indicator extends PanelMenu.Button {
             this._header.label.text = 'suspend-later unavailable';
             this._note.label.text = st.fatal;
             this._note.visible = true;
-            this._presetRow.visible = this._extendRow.visible = this._cancelItem.visible = false;
+            this._presetRow.visible = this._extendRow.visible = this._cancelButton.visible = false;
             return;
         }
 
         const active = Boolean(st?.active);
-        this._extendRow.visible = this._cancelItem.visible = active;
+        this._extendRow.visible = this._cancelButton.visible = active;
         this._presetRow.visible = true;
 
         if (active) {
