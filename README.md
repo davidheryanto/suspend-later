@@ -6,6 +6,8 @@ running for a while first.
 It replaces typing `sleep 3600 && systemctl suspend` in a terminal. You can see the schedule,
 change it, or cancel it, from a panel icon or the command line.
 
+![Panel menu with a suspend scheduled](docs/menu.png)
+
 ## Requirements
 
 - Linux with systemd and `/usr/bin/python3`
@@ -44,6 +46,8 @@ Add `--json` to any command to get the status as JSON.
 ## Panel icon
 
 A moon icon in the top bar.
+
+![Panel menu with nothing scheduled](docs/menu-idle.png)
 
 - **While a suspend is scheduled,** it shows the time left next to the moon, like `58m`.
 - **Click it** to see when the suspend happens, and to:
