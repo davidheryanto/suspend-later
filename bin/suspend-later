@@ -199,8 +199,16 @@ def fire(offset, dry_run):
     if dry_run:
         print("Dry run: would run `systemctl suspend` now.")
         return 0
-    print("Suspending now.")
-    return subprocess.run(["systemctl", "suspend"]).returncode
+    print("Suspending now.", flush=True)
+    r = subprocess.run(["systemctl", "suspend"], capture_output=True, text=True)
+    # systemctl returns once logind has accepted (or refused) the request, before the
+    # machine actually sleeps, so success here means "suspend started".
+    if r.returncode == 0:
+        print("Suspend accepted by logind.")
+    else:
+        detail = (r.stderr or r.stdout).strip() or "no output"
+        print(f"Suspend FAILED (systemctl exit {r.returncode}): {detail}")
+    return r.returncode
 
 
 def main(argv):
