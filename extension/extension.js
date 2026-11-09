@@ -16,7 +16,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-const POLL_SECONDS = 30;           // re-read the timer (catches CLI/SSH changes)
+const POLL_SECONDS = 30;           // fallback re-read; changes normally arrive via D-Bus
+const UNIT_PREFIX = 'suspend-later.';
 const CLI_TIMEOUT_SECONDS = 15;
 const PRESETS = ['30m', '1h', '2h', '3h'];
 const EXTENDS = ['+15m', '+30m', '+1h'];
@@ -154,6 +155,7 @@ export default class SuspendLaterExtension extends Extension {
             this.refresh();
             return GLib.SOURCE_CONTINUE;
         });
+        this._watchUnits();
         this._sleepId = Gio.DBus.system.signal_subscribe(
             'org.freedesktop.login1', 'org.freedesktop.login1.Manager', 'PrepareForSleep',
             '/org/freedesktop/login1', null, Gio.DBusSignalFlags.NONE,
@@ -174,10 +176,13 @@ export default class SuspendLaterExtension extends Extension {
     }
 
     disable() {
-        for (const id of [this._pollId, this._tickId, this._debugId])
+        for (const id of [this._pollId, this._tickId, this._debugId, this._unitDebounceId])
             if (id)
                 GLib.Source.remove(id);
-        this._pollId = this._tickId = this._debugId = 0;
+        this._pollId = this._tickId = this._debugId = this._unitDebounceId = 0;
+        if (this._unitsId)
+            Gio.DBus.session.signal_unsubscribe(this._unitsId);
+        this._unitsId = 0;
         if (this._sleepId)
             Gio.DBus.system.signal_unsubscribe(this._sleepId);
         this._sleepId = 0;
@@ -189,6 +194,39 @@ export default class SuspendLaterExtension extends Extension {
         this._indicator?.destroy();
         this._indicator = null;
         this._status = null;
+    }
+
+    // React at once when the CLI (terminal, SSH) creates or removes our timer/service,
+    // instead of waiting for the next poll. The systemd user manager only emits
+    // UnitNew/UnitRemoved to clients that called Subscribe(); calling it again is harmless.
+    _watchUnits() {
+        const bus = Gio.DBus.session;
+        bus.call('org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+            'org.freedesktop.systemd1.Manager', 'Subscribe', null, null,
+            Gio.DBusCallFlags.NONE, -1, null, (c, res) => {
+                try {
+                    c.call_finish(res);
+                } catch {} // no user manager on this bus (e.g. headless test): polling still works
+            });
+        const onUnit = (_c, _s, _p, _i, _n, params) => {
+            const [id] = params.deep_unpack();
+            if (!String(id).startsWith(UNIT_PREFIX))
+                return;
+            // One schedule change is a burst (stop + start of timer and service): debounce.
+            if (this._unitDebounceId)
+                GLib.Source.remove(this._unitDebounceId);
+            this._unitDebounceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+                this._unitDebounceId = 0;
+                this.refresh();
+                return GLib.SOURCE_REMOVE;
+            });
+        };
+        this._unitsId = bus.signal_subscribe('org.freedesktop.systemd1',
+            'org.freedesktop.systemd1.Manager', null, '/org/freedesktop/systemd1', null,
+            Gio.DBusSignalFlags.NONE, (c, s, p, i, name, params) => {
+                if (name === 'UnitNew' || name === 'UnitRemoved')
+                    onUnit(c, s, p, i, name, params);
+            });
     }
 
     refresh() {

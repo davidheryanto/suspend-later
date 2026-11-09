@@ -28,7 +28,8 @@ extension changes still need a logout/login to load.
 
 A moon icon in the panel. While a suspend is scheduled it shows the countdown (`☾ 58m`); click
 for the deadline, **Suspend in** 30m / 1h / 2h / 3h, **Extend** +15m / +30m / +1h, and **Cancel**.
-It only runs the CLI with `--json` and draws the result: it re-reads every 30 s, when the menu
+It only runs the CLI with `--json` and draws the result. It re-reads as soon as systemd reports
+the timer created or removed (so terminal/SSH changes show at once), plus every 30 s, when the menu
 opens, after unlock and after resume, and counts down locally in between. A failed suspend
 attempt turns it orange with the reason.
 
