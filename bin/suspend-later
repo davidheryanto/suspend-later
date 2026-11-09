@@ -6,14 +6,17 @@ survives closing the terminal, is visible to `systemctl --user list-timers`, and
 working if the GNOME extension that fronts this CLI is disabled.
 
 Usage:
-  suspend-later                 show status (same as `status`)
-  suspend-later 1h              suspend in 1 hour (replaces any existing schedule)
-  suspend-later 90m | 1h30m | 45   (a bare number means minutes)
-  suspend-later 23:30           suspend at the next 23:30
-  suspend-later +30m            extend the current schedule (or schedule, if none)
-  suspend-later cancel          cancel the schedule
-  suspend-later status [--json]
-  add --dry-run to a schedule to log instead of suspending (for testing)
+  suspend-later                   show status
+  suspend-later 1h                suspend in 1 hour (replaces any existing schedule)
+  suspend-later 90m               also 1h30m, 2.5h, or 45 (a bare number means minutes)
+  suspend-later 23:30             suspend at the next 23:30
+  suspend-later +30m              extend the current schedule (or schedule, if none)
+  suspend-later cancel            cancel the schedule
+  suspend-later status [--json]   show status, optionally as JSON
+
+Options:
+  --json                          print the resulting status as JSON (any command)
+  --dry-run                       when scheduling, log instead of suspending (for testing)
 """
 
 import json
