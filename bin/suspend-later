@@ -112,12 +112,25 @@ def read_state():
     return {"deadline": deadline, "dry_run": dry_run}
 
 
+def last_failure():
+    """If the last fire attempt failed (e.g. suspend refused), a short reason; else None."""
+    out = systemctl("show", SERVICE, "-p", "ActiveState", "-p", "Result").stdout
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    if props.get("ActiveState") == "failed":
+        return f"last suspend attempt failed ({props.get('Result', 'unknown')}); " \
+               f"see journalctl --user -u {SERVICE}"
+    return None
+
+
 def status_dict():
     st = read_state()
     if not st or st.get("stale"):
         d = {"active": False}
         if st:
             d["note"] = "cancelled a schedule made before the machine last slept"
+        err = last_failure()
+        if err:
+            d["error"] = err
         return d
     remaining = st["deadline"] - time.time()
     return {
@@ -136,6 +149,8 @@ def print_status(as_json):
         return
     if not d["active"]:
         print("No suspend scheduled." + (f" ({d['note']})" if "note" in d else ""))
+        if "error" in d:
+            print(f"Warning: {d['error']}.")
         return
     at = datetime.fromtimestamp(d["deadline_epoch"]).strftime("%H:%M")
     dry = "  [dry run]" if d["dry_run"] else ""
@@ -144,15 +159,17 @@ def print_status(as_json):
 
 # ---------------------------------------------------------------- actions
 
-def cancel(quiet=False):
+def cancel(quiet=False, as_json=False):
     was = systemctl("is-active", "--quiet", TIMER).returncode == 0
     systemctl("stop", TIMER, SERVICE)
-    systemctl("reset-failed", TIMER, SERVICE)
-    if not quiet:
+    systemctl("reset-failed", TIMER, SERVICE)  # also clears a remembered failure
+    if as_json:
+        print_status(True)
+    elif not quiet:
         print("Cancelled." if was else "Nothing to cancel.")
 
 
-def schedule(seconds, dry_run):
+def schedule(seconds, dry_run, as_json):
     if seconds < 1:
         die("duration must be at least 1 second")
     cancel(quiet=True)
@@ -160,13 +177,15 @@ def schedule(seconds, dry_run):
     if dry_run:
         fire.append("--dry-run")
     r = subprocess.run(
-        ["systemd-run", "--user", "--quiet", "--collect", f"--unit={UNIT}",
+        # No --collect: a failed fire stays loaded so `status` can report it until the next
+        # schedule/cancel runs reset-failed.
+        ["systemd-run", "--user", "--quiet", f"--unit={UNIT}",
          f"--description=suspend-later: suspend at a scheduled time",
          f"--on-active={math.ceil(seconds)}s", "--timer-property=AccuracySec=1s", *fire],
         capture_output=True, text=True)
     if r.returncode != 0:
         die(f"systemd-run failed: {r.stderr.strip()}")
-    print_status(False)
+    print_status(as_json)
 
 
 def fire(offset, dry_run):
@@ -191,7 +210,7 @@ def main(argv):
     elif args[0] in ("-h", "--help", "help"):
         print(__doc__.strip())
     elif args[0] == "cancel":
-        cancel()
+        cancel(as_json=as_json)
     elif args[0] == "_fire":
         return fire(float(args[1]), dry_run)
     elif args[0].startswith("+"):
@@ -200,14 +219,14 @@ def main(argv):
             die(f"can't parse duration {args[0][1:]!r} (try 30m, 1h, 1h30m)")
         st = read_state()
         base = max(0, st["deadline"] - time.time()) if st and not st.get("stale") else 0
-        schedule(base + delta, dry_run or bool(st and st.get("dry_run")))
+        schedule(base + delta, dry_run or bool(st and st.get("dry_run")), as_json)
     else:
         seconds = parse_clock(args[0])
         if seconds is None:
             seconds = parse_duration(args[0])
         if seconds is None:
             die(f"can't parse {args[0]!r} (try 1h, 90m, 1h30m, 45, 23:30, +30m, cancel)")
-        schedule(seconds, dry_run)
+        schedule(seconds, dry_run, as_json)
     return 0
 
 
