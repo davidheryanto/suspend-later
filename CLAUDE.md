@@ -19,6 +19,8 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
 1. Keep it small and boring. systemd is the source of truth; no state files.
 2. **Never run a real suspend while testing** — use `--dry-run` (the fire step logs instead).
    `_fire 0 --dry-run` exercises the stale-after-sleep guard (the machine has slept since boot).
+   **Check `suspend-later status` before scheduling a test:** any schedule replaces the
+   current one, so a test dry run silently wipes a real suspend the owner set (happened once).
 3. Sleep guard: `CLOCK_BOOTTIME - CLOCK_MONOTONIC` = seconds slept since boot. Recorded at
    schedule time in the ExecStart args; if it grew by > 5 s, the schedule is stale and dropped.
 

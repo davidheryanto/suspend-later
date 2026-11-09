@@ -1,4 +1,7 @@
-.suspend-later-panel { spacing: 4px; }
+.suspend-later-panel { spacing: 6px; }
+/* The theme pads panel icons by 6px + 4px margin each side, which left ~22px before the
+ * moon but only the button's 12px after the countdown. Zero it so both ends match. */
+#panel .panel-button .suspend-later-panel .system-status-icon { padding: 0; margin: 0; }
 .suspend-later-panel .system-status-icon { opacity: 0.55; }
 .suspend-later-active .suspend-later-panel .system-status-icon { opacity: 1; }
 .suspend-later-error .suspend-later-panel { color: rgb(224, 120, 79); }
