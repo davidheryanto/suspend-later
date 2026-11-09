@@ -1,46 +1,24 @@
-# suspend-later — agent context
+# suspend-later
 
-Personal tool: schedule a delayed `systemctl suspend` on the owner's Fedora 42 / GNOME 48
-desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
+Suspend the machine after a delay. See README.md for usage and design.
 
-## Shape
-- `bin/suspend-later` — single-file Python CLI (stdlib only, `/usr/bin/python3`). The **only**
-  thing that touches systemd. Schedule = transient user timer `suspend-later.timer` running
-  `bin/suspend-later _fire <sleep-offset>`.
-- `extension/` — GNOME Shell panel indicator (UUID `suspend-later@davidheryanto`) that only
-  spawns the CLI with `--json` and draws the result (same pattern as `../codexbar-gnome`). Must
-  stay a thin UI: no timers of its own that suspend, so a broken/disabled extension never loses
-  or fires a schedule. Status reads are skipped while an action is in flight, one action runs at a time, and CLI calls are never killed (the CLI holds a lock; killing it can orphan a `systemctl stop`). The CLI and its fire step share one flock.
-- `dev/headless-capture.sh` — throwaway gnome-shell on Xvfb; gate before any logout/login.
-  It runs stock GNOME, not Dash to Panel — see `../codexbar-gnome/CLAUDE.md` gotchas
-  (D2P flips vertical `St.BoxLayout`s; lock screen disables/enables extensions).
+- `bin/suspend-later`: single-file Python CLI (stdlib only). The only code that touches systemd.
+  A schedule is the transient user timer `suspend-later.timer`.
+- `extension/`: GNOME Shell panel icon. A thin UI: it only runs the CLI with `--json` and
+  draws the result. It must never suspend, and never kill a CLI call (the CLI holds a lock
+  while it changes the timer).
 
 ## Rules
-1. Keep it small and boring. systemd is the source of truth; no state files.
-2. **Never run a real suspend while testing** — use `--dry-run` (the fire step logs instead).
-   `_fire 0 --dry-run` exercises the stale-after-sleep guard (the machine has slept since boot).
-   **Check `suspend-later status` before scheduling a test:** any schedule replaces the
-   current one, so a test dry run silently wipes a real suspend the owner set (happened once).
-3. Sleep guard: `CLOCK_BOOTTIME - CLOCK_MONOTONIC` = seconds slept since boot. Recorded at
-   schedule time in the ExecStart args; if it grew by > 5 s, the schedule is stale and dropped.
 
-## Status (2026-11-09)
-- CLI done and dry-run tested (schedule/extend/clock/cancel/fire/stale guard/failed fire).
-- Extension passes headless smoke test and is live in the real session (D2P panel): countdown
-  shows immediately for a CLI-made schedule (systemd UnitNew/UnitRemoved listener, verified
-  live 2026-11-09). Menu buttons (+15m, Cancel) verified live. Stale-after-manual-suspend verified live: resume
-  16:21:37, the extension's post-wake status read stopped the old timer at 16:21:44.
-- **Real suspend verified 2026-11-09:** `suspend-later 10s` → "Suspend accepted by logind." →
-  kernel `PM: suspend entry (deep)`, manual wake, `status` clean afterwards. gnome-session's
-  `block` sleep inhibitor ("user session inhibited") did not interfere.
-- The `systemd-sleep` warning "User sessions remain unfrozen on explicit request" comes from the
-  NVIDIA driver setup (`SYSTEMD_SLEEP_FREEZE_USER_SESSIONS=0`), not from this tool.
+- Keep it small. systemd is the source of truth; no state files.
+- Test with `--dry-run`. Never trigger a real suspend.
+- Run `suspend-later status` before scheduling a test. Any schedule replaces the current one,
+  including a real one the owner set.
+- Before asking for a logout/login, run `dev/headless-capture.sh` (it must print PASSED).
+  It runs stock GNOME, so check panel layout changes in the real session too.
 
-## Verified facts
-- `systemctl --user list-timers <timer> -o json` → `next` is the deadline in **realtime µs**
-  (the `left` field is not a duration — ignore it). `NextElapseUSecRealtime` is empty for
-  `--on-active` timers.
-- A `systemd-run --user` service is polkit-authorized for `org.freedesktop.login1.suspend`
-  (checked with `pkcheck`), same as an interactive terminal (both live in `user@1000.service`).
-  `suspend-ignore-inhibit` is NOT authorized from either.
-- GNOME automatic suspend on AC is `'nothing'` on this machine, so no idle inhibitor is needed.
+## Gotchas
+
+- `systemctl --user list-timers <timer> -o json`: `next` is the deadline in realtime µs.
+  Ignore `left`. `NextElapseUSecRealtime` is empty for `--on-active` timers.
+- Sleep detection: `CLOCK_BOOTTIME - CLOCK_MONOTONIC` is total time slept since boot.
