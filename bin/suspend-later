@@ -19,10 +19,12 @@ Options:
   --dry-run                       when scheduling, log instead of suspending (for testing)
 """
 
+import fcntl
 import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -225,32 +227,59 @@ def fire(offset, dry_run):
     return r.returncode
 
 
+FLAGS = ("--dry-run", "--json")
+
+
+def locked():
+    """Hold an exclusive lock for the rest of this process, so concurrent invocations
+    (terminal, SSH, the panel) can't interleave read-stop-recreate and lose a schedule.
+    It also stops Ctrl-C from landing between stopping the old timer and creating the new one."""
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", f"suspend-later-{os.getuid()}.lock")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    return fd
+
+
 def main(argv):
+    if argv[:1] == ["_fire"]:  # internal: run by the timer's service; takes no lock
+        return fire(float(argv[1]), "--dry-run" in argv[2:])
+
+    unknown = [a for a in argv if a.startswith("--") and a not in FLAGS]
+    if unknown:
+        die(f"unknown option {unknown[0]!r} (options: {', '.join(FLAGS)})")
     dry_run = "--dry-run" in argv
     as_json = "--json" in argv
-    args = [a for a in argv if a not in ("--dry-run", "--json")]
+    args = [a for a in argv if a not in FLAGS]
+    if len(args) > 1:
+        die(f"expected one argument, got {len(args)}: {' '.join(args)} (try 1h30m, not 1h 30m)")
+    cmd = args[0] if args else "status"
 
-    if not args or args[0] == "status":
-        print_status(as_json)
-    elif args[0] in ("-h", "--help", "help"):
+    if cmd in ("-h", "--help", "help"):
         print(__doc__.strip())
-    elif args[0] == "cancel":
+        return 0
+    if dry_run and cmd in ("status", "cancel"):
+        die("--dry-run only applies when scheduling")
+
+    locked()
+    if cmd == "status":
+        print_status(as_json)
+    elif cmd == "cancel":
         cancel(as_json=as_json)
-    elif args[0] == "_fire":
-        return fire(float(args[1]), dry_run)
-    elif args[0].startswith("+"):
-        delta = parse_duration(args[0][1:])
+    elif cmd.startswith("+"):
+        delta = parse_duration(cmd[1:])
         if delta is None:
-            die(f"can't parse duration {args[0][1:]!r} (try 30m, 1h, 1h30m)")
+            die(f"can't parse duration {cmd[1:]!r} (try 30m, 1h, 1h30m)")
         st = read_state()
         base = max(0, st["deadline"] - time.time()) if st and not st.get("stale") else 0
         schedule(base + delta, dry_run or bool(st and st.get("dry_run")), as_json)
     else:
-        seconds = parse_clock(args[0])
+        seconds = parse_clock(cmd)
         if seconds is None:
-            seconds = parse_duration(args[0])
+            seconds = parse_duration(cmd)
         if seconds is None:
-            die(f"can't parse {args[0]!r} (try 1h, 90m, 1h30m, 45, 23:30, 11pm, +30m, cancel)")
+            die(f"can't parse {cmd!r} (try 1h, 90m, 1h30m, 45, 23:30, 11pm, +30m, cancel)")
         schedule(seconds, dry_run, as_json)
     return 0
 

@@ -157,7 +157,7 @@ export default class SuspendLaterExtension extends Extension {
     enable() {
         this._status = null;
         this._seq = 0;          // only the newest CLI call's result is applied
-        this._procs = new Set();
+        this._procs = new Map();   // proc -> isAction, for this enable() lifecycle
         this._actions = 0;      // schedule/cancel calls in flight
         this._indicator = new Indicator(this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
@@ -201,11 +201,14 @@ export default class SuspendLaterExtension extends Extension {
         if (this._sleepId)
             Gio.DBus.system.signal_unsubscribe(this._sleepId);
         this._sleepId = 0;
-        // Only aborts reads of status/actions in flight; a schedule change the CLI
-        // already started completes on its own, which is fine.
-        for (const p of this._procs)
-            p.force_exit();
-        this._procs.clear();
+        // Kill in-flight status reads, but let schedule/cancel calls finish: killing one
+        // between "stop old timer" and "create new timer" would lose the schedule. Their
+        // callbacks see they no longer belong to this lifecycle and do nothing.
+        for (const [p, isAction] of this._procs)
+            if (!isAction)
+                p.force_exit();
+        this._procs = new Map();
+        this._actions = 0;
         this._indicator?.destroy();
         this._indicator = null;
         this._status = null;
@@ -267,19 +270,26 @@ export default class SuspendLaterExtension extends Extension {
             this._apply({fatal: `could not run suspend-later: ${e.message}`});
             return;
         }
-        this._procs.add(proc);
+        const procs = this._procs;
+        procs.set(proc, isAction);
         if (isAction)
             this._actions++;
-        const watchdog = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, CLI_TIMEOUT_SECONDS, () => {
+        // Only status reads get a kill-on-timeout; an action is never killed midway
+        // (see disable()). A status read is harmless to kill.
+        let watchdog = isAction ? 0 : GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, CLI_TIMEOUT_SECONDS, () => {
+            watchdog = 0;
             proc.force_exit();
             return GLib.SOURCE_REMOVE;
         });
         proc.communicate_utf8_async(null, null, (p, res) => {
-            GLib.Source.remove(watchdog);
+            if (watchdog)
+                GLib.Source.remove(watchdog);
+            // Ignore a callback from an earlier enable() lifecycle (disabled meanwhile)
+            // before touching any counters of the current one.
+            if (procs !== this._procs || !procs.delete(p) || !this._indicator)
+                return;
             if (isAction)
                 this._actions--;
-            if (!this._procs.delete(p) || !this._indicator)
-                return; // disabled meanwhile
             let stdout = '', stderr = '';
             try {
                 [, stdout, stderr] = p.communicate_utf8_finish(res);
