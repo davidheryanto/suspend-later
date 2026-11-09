@@ -18,6 +18,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const POLL_SECONDS = 30;           // fallback re-read; changes normally arrive via D-Bus
 const UNIT_PREFIX = 'suspend-later.';
+const SOON_SECONDS = 5 * 60;      // turn the panel yellow this close to a suspend
 const PRESETS = ['30m', '1h', '2h', '3h'];
 const EXTENDS = ['+15m', '+30m', '+1h', '+2h'];
 
@@ -109,6 +110,8 @@ class Indicator extends PanelMenu.Button {
     render(st) {
         this.remove_style_class_name('suspend-later-active');
         this.remove_style_class_name('suspend-later-error');
+        this.remove_style_class_name('suspend-later-soon');
+        this.remove_style_class_name('suspend-later-soon-dry');
         this._note.visible = false;
 
         if (st?.fatal) {
@@ -133,6 +136,10 @@ class Indicator extends PanelMenu.Button {
                 this._label.add_style_class_name('suspend-later-dry');
             else
                 this._label.remove_style_class_name('suspend-later-dry');
+            // Last few minutes: yellow, so it's noticed if you're still at the desk.
+            // No flashing. A dry run only gets a faint tint.
+            if (left <= SOON_SECONDS)
+                this.add_style_class_name(st.dry_run ? 'suspend-later-soon-dry' : 'suspend-later-soon');
             this._label.text = fmtLeft(left);
             this._label.visible = true;
             const dry = st.dry_run ? '  (dry run)' : '';

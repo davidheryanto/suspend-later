@@ -15,3 +15,7 @@
 .suspend-later-cancel { color: rgb(240, 130, 120); }
 .suspend-later-cancel:hover { color: rgb(255, 160, 150); }
 .suspend-later-dry { color: rgba(255, 255, 255, 0.45); font-style: italic; }
+/* Last 5 minutes before a real suspend: GNOME's warning yellow (orange stays "failed"). */
+.suspend-later-soon .suspend-later-panel { color: #f6d32d; }
+.suspend-later-soon-dry .suspend-later-panel { color: rgba(246, 211, 45, 0.55); }
+.suspend-later-soon-dry .suspend-later-dry { color: rgba(246, 211, 45, 0.55); }

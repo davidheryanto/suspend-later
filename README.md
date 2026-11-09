@@ -55,6 +55,7 @@ A moon icon in the top bar.
   - **Extend** by 15m, 30m, 1h, or 2h
   - **Cancel**
 - **Bright text** means a real suspend is coming. **Dim, italic text** means a dry run.
+- **Yellow** means less than 5 minutes are left, in case you are still at the desk.
 - **Orange** means the last suspend attempt failed. Open the menu to see why.
 
 Changes made from the terminal or over SSH show up in the panel right away.
