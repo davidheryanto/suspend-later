@@ -1,0 +1,215 @@
+#!/usr/bin/python3
+"""suspend-later: schedule, extend, cancel and inspect a delayed `systemctl suspend`.
+
+The schedule is a transient systemd *user* timer named `suspend-later.timer`, so it
+survives closing the terminal, is visible to `systemctl --user list-timers`, and keeps
+working if the GNOME extension that fronts this CLI is disabled.
+
+Usage:
+  suspend-later                 show status (same as `status`)
+  suspend-later 1h              suspend in 1 hour (replaces any existing schedule)
+  suspend-later 90m | 1h30m | 45   (a bare number means minutes)
+  suspend-later 23:30           suspend at the next 23:30
+  suspend-later +30m            extend the current schedule (or schedule, if none)
+  suspend-later cancel          cancel the schedule
+  suspend-later status [--json]
+  add --dry-run to a schedule to log instead of suspending (for testing)
+"""
+
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta
+
+UNIT = "suspend-later"
+TIMER = f"{UNIT}.timer"
+SERVICE = f"{UNIT}.service"
+# If CLOCK_BOOTTIME has pulled ahead of CLOCK_MONOTONIC by more than this since the
+# schedule was made, the machine slept in between, and the schedule is stale.
+SLEPT_SLACK = 5.0
+
+
+def die(msg, code=1):
+    print(f"suspend-later: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def systemctl(*args, check=False):
+    return subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True, check=check)
+
+
+def sleep_offset():
+    """Total seconds spent suspended since boot (BOOTTIME counts sleep, MONOTONIC doesn't)."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.clock_gettime(time.CLOCK_MONOTONIC)
+
+
+# ---------------------------------------------------------------- durations
+
+UNIT_SECONDS = {"h": 3600, "m": 60, "s": 1}
+
+
+def parse_duration(text):
+    """'1h', '90m', '1h30m', '2.5h', '45' (minutes) -> seconds. None if invalid."""
+    text = text.strip().lower()
+    if re.fullmatch(r"\d+(\.\d+)?", text):
+        return float(text) * 60
+    parts = re.findall(r"(\d+(?:\.\d+)?)([hms])", text)
+    if not parts or "".join(n + u for n, u in parts) != text:
+        return None
+    return sum(float(n) * UNIT_SECONDS[u] for n, u in parts)
+
+
+def parse_clock(text):
+    """'23:30' -> seconds until its next occurrence. None if not a clock time."""
+    m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", text.strip())
+    if not m:
+        return None
+    now = datetime.now()
+    target = now.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def human(seconds):
+    seconds = max(0, int(round(seconds)))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m"
+    if m:
+        return f"{m}m" if m >= 10 or not s else f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
+# ---------------------------------------------------------------- state
+
+def read_state():
+    """Current schedule as a dict, or None. Cancels a schedule left over from before a sleep."""
+    if systemctl("is-active", "--quiet", TIMER).returncode != 0:
+        return None
+    out = systemctl("list-timers", TIMER, "--all", "-o", "json").stdout
+    try:
+        rows = [r for r in json.loads(out or "[]") if r.get("unit") == TIMER]
+    except json.JSONDecodeError:
+        rows = []
+    if not rows or not rows[0].get("next"):
+        return None
+    deadline = rows[0]["next"] / 1e6
+
+    exec_start = systemctl("show", SERVICE, "-p", "ExecStart", "--value").stdout
+    m = re.search(r"_fire (\S+)", exec_start)
+    offset = float(m[1]) if m else None
+    dry_run = "--dry-run" in exec_start
+
+    if offset is not None and sleep_offset() - offset > SLEPT_SLACK:
+        cancel(quiet=True)
+        return {"stale": True}
+    return {"deadline": deadline, "dry_run": dry_run}
+
+
+def status_dict():
+    st = read_state()
+    if not st or st.get("stale"):
+        d = {"active": False}
+        if st:
+            d["note"] = "cancelled a schedule made before the machine last slept"
+        return d
+    remaining = st["deadline"] - time.time()
+    return {
+        "active": True,
+        "deadline": datetime.fromtimestamp(st["deadline"]).astimezone().isoformat(timespec="seconds"),
+        "deadline_epoch": round(st["deadline"], 3),
+        "remaining_seconds": max(0, int(round(remaining))),
+        "dry_run": st["dry_run"],
+    }
+
+
+def print_status(as_json):
+    d = status_dict()
+    if as_json:
+        print(json.dumps(d))
+        return
+    if not d["active"]:
+        print("No suspend scheduled." + (f" ({d['note']})" if "note" in d else ""))
+        return
+    at = datetime.fromtimestamp(d["deadline_epoch"]).strftime("%H:%M")
+    dry = "  [dry run]" if d["dry_run"] else ""
+    print(f"Suspend scheduled at {at} (in {human(d['remaining_seconds'])}).{dry}")
+
+
+# ---------------------------------------------------------------- actions
+
+def cancel(quiet=False):
+    was = systemctl("is-active", "--quiet", TIMER).returncode == 0
+    systemctl("stop", TIMER, SERVICE)
+    systemctl("reset-failed", TIMER, SERVICE)
+    if not quiet:
+        print("Cancelled." if was else "Nothing to cancel.")
+
+
+def schedule(seconds, dry_run):
+    if seconds < 1:
+        die("duration must be at least 1 second")
+    cancel(quiet=True)
+    fire = ["/usr/bin/python3", os.path.realpath(__file__), "_fire", f"{sleep_offset():.3f}"]
+    if dry_run:
+        fire.append("--dry-run")
+    r = subprocess.run(
+        ["systemd-run", "--user", "--quiet", "--collect", f"--unit={UNIT}",
+         f"--description=suspend-later: suspend at a scheduled time",
+         f"--on-active={math.ceil(seconds)}s", "--timer-property=AccuracySec=1s", *fire],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        die(f"systemd-run failed: {r.stderr.strip()}")
+    print_status(False)
+
+
+def fire(offset, dry_run):
+    """Runs inside suspend-later.service when the timer elapses."""
+    if sleep_offset() - offset > SLEPT_SLACK:
+        print("Skipping: the machine slept since this schedule was made.")
+        return 0
+    if dry_run:
+        print("Dry run: would run `systemctl suspend` now.")
+        return 0
+    print("Suspending now.")
+    return subprocess.run(["systemctl", "suspend"]).returncode
+
+
+def main(argv):
+    dry_run = "--dry-run" in argv
+    as_json = "--json" in argv
+    args = [a for a in argv if a not in ("--dry-run", "--json")]
+
+    if not args or args[0] == "status":
+        print_status(as_json)
+    elif args[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+    elif args[0] == "cancel":
+        cancel()
+    elif args[0] == "_fire":
+        return fire(float(args[1]), dry_run)
+    elif args[0].startswith("+"):
+        delta = parse_duration(args[0][1:])
+        if delta is None:
+            die(f"can't parse duration {args[0][1:]!r} (try 30m, 1h, 1h30m)")
+        st = read_state()
+        base = max(0, st["deadline"] - time.time()) if st and not st.get("stale") else 0
+        schedule(base + delta, dry_run or bool(st and st.get("dry_run")))
+    else:
+        seconds = parse_clock(args[0])
+        if seconds is None:
+            seconds = parse_duration(args[0])
+        if seconds is None:
+            die(f"can't parse {args[0]!r} (try 1h, 90m, 1h30m, 45, 23:30, +30m, cancel)")
+        schedule(seconds, dry_run)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
