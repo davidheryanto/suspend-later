@@ -20,7 +20,7 @@ const POLL_SECONDS = 30;           // fallback re-read; changes normally arrive 
 const UNIT_PREFIX = 'suspend-later.';
 const CLI_TIMEOUT_SECONDS = 15;
 const PRESETS = ['30m', '1h', '2h', '3h'];
-const EXTENDS = ['+15m', '+30m', '+1h'];
+const EXTENDS = ['+15m', '+30m', '+1h', '+2h'];
 
 function findCli() {
     return GLib.find_program_in_path('suspend-later') ??
