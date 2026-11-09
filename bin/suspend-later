@@ -9,7 +9,7 @@ Usage:
   suspend-later                   show status
   suspend-later 1h                suspend in 1 hour (replaces any existing schedule)
   suspend-later 90m               also 1h30m, 2.5h, or 45 (a bare number means minutes)
-  suspend-later 23:30             suspend at the next 23:30
+  suspend-later 23:30             suspend at the next 23:30 (also 11pm, 5:30pm)
   suspend-later +30m              extend the current schedule (or schedule, if none)
   suspend-later cancel            cancel the schedule
   suspend-later status [--json]   show status, optionally as JSON
@@ -67,15 +67,29 @@ def parse_duration(text):
 
 
 def parse_clock(text):
-    """'23:30' -> seconds until its next occurrence. None if not a clock time."""
-    m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", text.strip())
-    if not m:
+    """'23:30', '11pm', '5:30pm' -> seconds until its next occurrence. None if not a clock time."""
+    text = text.strip().lower().replace(" ", "")
+    if m := re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", text):
+        hour, minute = int(m[1]), int(m[2])
+    elif m := re.fullmatch(r"(0?[1-9]|1[0-2])(?::([0-5]\d))?(am|pm)", text):
+        hour, minute = int(m[1]) % 12 + (12 if m[3] == "pm" else 0), int(m[2] or 0)
+    else:
         return None
     now = datetime.now()
-    target = now.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     return (target - now).total_seconds()
+
+
+def clock(epoch):
+    """Deadline as a clock time, following GNOME's clock-format setting when available."""
+    r = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "clock-format"],
+                       capture_output=True, text=True)
+    t = datetime.fromtimestamp(epoch)
+    if "12h" in r.stdout:
+        return t.strftime("%I:%M %p").lstrip("0")
+    return t.strftime("%H:%M")
 
 
 def human(seconds):
@@ -155,7 +169,7 @@ def print_status(as_json):
         if "error" in d:
             print(f"Warning: {d['error']}.")
         return
-    at = datetime.fromtimestamp(d["deadline_epoch"]).strftime("%H:%M")
+    at = clock(d["deadline_epoch"])
     dry = "  [dry run]" if d["dry_run"] else ""
     print(f"Suspend scheduled at {at} (in {human(d['remaining_seconds'])}).{dry}")
 
@@ -236,7 +250,7 @@ def main(argv):
         if seconds is None:
             seconds = parse_duration(args[0])
         if seconds is None:
-            die(f"can't parse {args[0]!r} (try 1h, 90m, 1h30m, 45, 23:30, +30m, cancel)")
+            die(f"can't parse {args[0]!r} (try 1h, 90m, 1h30m, 45, 23:30, 11pm, +30m, cancel)")
         schedule(seconds, dry_run, as_json)
     return 0
 

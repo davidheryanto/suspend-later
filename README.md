@@ -7,7 +7,7 @@ cancel and extend.
 ```
 suspend-later 1h          # suspend in 1 hour (replaces any existing schedule)
 suspend-later 90m         # also: 1h30m, 2.5h, 45 (bare number = minutes)
-suspend-later 23:30       # at the next 23:30
+suspend-later 23:30       # at the next 23:30 (also 11pm, 5:30pm)
 suspend-later +30m        # extend (or schedule, if nothing is pending)
 suspend-later cancel
 suspend-later             # status: "Suspend scheduled at 15:24 (in 58m)."

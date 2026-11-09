@@ -40,8 +40,12 @@ function fmtLeft(sec) {
     return `${sec}s`;
 }
 
+// Deadline as a clock time, following GNOME's clock-format setting (12h -> "5:10 PM").
+let interfaceSettings = null;
 function fmtClock(epoch) {
-    return GLib.DateTime.new_from_unix_local(Math.floor(epoch)).format('%H:%M');
+    interfaceSettings ??= new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+    const fmt = interfaceSettings.get_string('clock-format') === '12h' ? '%-l:%M %p' : '%H:%M';
+    return GLib.DateTime.new_from_unix_local(Math.floor(epoch)).format(fmt);
 }
 
 const Indicator = GObject.registerClass(
