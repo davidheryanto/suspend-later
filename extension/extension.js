@@ -125,6 +125,11 @@ class Indicator extends PanelMenu.Button {
         if (active) {
             const left = st.deadline_epoch - Date.now() / 1000;
             this.add_style_class_name('suspend-later-active');
+            // Dim the countdown for a dry run: bright = a real suspend is armed.
+            if (st.dry_run)
+                this._label.add_style_class_name('suspend-later-dry');
+            else
+                this._label.remove_style_class_name('suspend-later-dry');
             this._label.text = fmtLeft(left);
             this._label.visible = true;
             const dry = st.dry_run ? '  (dry run)' : '';

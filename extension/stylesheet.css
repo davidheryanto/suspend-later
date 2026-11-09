@@ -11,3 +11,4 @@
 .popup-menu-item:insensitive .suspend-later-header { color: rgba(255, 255, 255, 0.95); }
 .suspend-later-cancel { color: rgb(240, 130, 120); }
 .suspend-later-cancel:hover { color: rgb(255, 160, 150); }
+.suspend-later-dry { color: rgba(255, 255, 255, 0.45); font-style: italic; }

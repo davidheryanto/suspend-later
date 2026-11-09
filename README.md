@@ -31,7 +31,7 @@ for the deadline, **Suspend in** 30m / 1h / 2h / 3h, **Extend** +15m / +30m / +1
 It only runs the CLI with `--json` and draws the result. It re-reads as soon as systemd reports
 the timer created or removed (so terminal/SSH changes show at once), plus every 30 s, when the menu
 opens, after unlock and after resume, and counts down locally in between. A failed suspend
-attempt turns it orange with the reason.
+attempt turns it orange with the reason. A dry-run countdown is dimmed and italic; a real one is bright.
 
 Smoke test without logging out: `dev/headless-capture.sh` (throwaway gnome-shell on Xvfb,
 screenshot in `scratch/`).
