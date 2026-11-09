@@ -26,7 +26,8 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
 - CLI done and dry-run tested (schedule/extend/clock/cancel/fire/stale guard/failed fire).
 - Extension passes headless smoke test and is live in the real session (D2P panel): countdown
   shows immediately for a CLI-made schedule (systemd UnitNew/UnitRemoved listener, verified
-  live 2026-11-09). Menu button clicks still untested live.
+  live 2026-11-09). Menu buttons (+15m, Cancel) verified live. Stale-after-manual-suspend verified live: resume
+  16:21:37, the extension's post-wake status read stopped the old timer at 16:21:44.
 - **Real suspend verified 2026-11-09:** `suspend-later 10s` → "Suspend accepted by logind." →
   kernel `PM: suspend entry (deep)`, manual wake, `status` clean afterwards. gnome-session's
   `block` sleep inhibitor ("user session inhibited") did not interfere.
