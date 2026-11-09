@@ -27,9 +27,11 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
 - Extension passes headless smoke test and is live in the real session (D2P panel): countdown
   shows immediately for a CLI-made schedule (systemd UnitNew/UnitRemoved listener, verified
   live 2026-11-09). Menu button clicks still untested live.
-- **The real suspend path has not run yet** — owner to try `suspend-later 20s` once.
-  Watch for: gnome-session holds a `block` sleep inhibitor ("user session inhibited");
-  same uid, so expected to be ignored by logind, but unverified.
+- **Real suspend verified 2026-11-09:** `suspend-later 10s` → "Suspend accepted by logind." →
+  kernel `PM: suspend entry (deep)`, manual wake, `status` clean afterwards. gnome-session's
+  `block` sleep inhibitor ("user session inhibited") did not interfere.
+- The `systemd-sleep` warning "User sessions remain unfrozen on explicit request" comes from the
+  NVIDIA driver setup (`SYSTEMD_SLEEP_FREEZE_USER_SESSIONS=0`), not from this tool.
 
 ## Verified facts
 - `systemctl --user list-timers <timer> -o json` → `next` is the deadline in **realtime µs**
