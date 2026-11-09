@@ -230,21 +230,30 @@ def fire(offset, dry_run):
 FLAGS = ("--dry-run", "--json")
 
 
-def locked():
-    """Hold an exclusive lock for the rest of this process, so concurrent invocations
-    (terminal, SSH, the panel) can't interleave read-stop-recreate and lose a schedule.
-    It also stops Ctrl-C from landing between stopping the old timer and creating the new one."""
+def locked(protect=True):
+    """Hold an exclusive lock for the rest of this process. Every command takes it, and so
+    does the fire step, so a schedule change and a firing timer can't interleave.
+
+    protect=True (commands): also ignore Ctrl-C/SIGTERM, so a change can't be cut off
+    between stopping the old timer and creating the new one.
+    protect=False (fire step): stay killable, so that if a change is waiting on the lock
+    first, its `systemctl stop` of the service kills this firing before it suspends."""
     path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", f"suspend-later-{os.getuid()}.lock")
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    if protect:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     return fd
 
 
 def main(argv):
-    if argv[:1] == ["_fire"]:  # internal: run by the timer's service; takes no lock
+    if argv[:1] == ["_fire"]:  # internal: run by the timer's service
+        locked(protect=False)
         return fire(float(argv[1]), "--dry-run" in argv[2:])
+    if argv[:1] in (["-h"], ["--help"], ["help"]):
+        print(__doc__.strip())
+        return 0
 
     unknown = [a for a in argv if a.startswith("--") and a not in FLAGS]
     if unknown:
@@ -256,13 +265,15 @@ def main(argv):
         die(f"expected one argument, got {len(args)}: {' '.join(args)} (try 1h30m, not 1h 30m)")
     cmd = args[0] if args else "status"
 
-    if cmd in ("-h", "--help", "help"):
-        print(__doc__.strip())
-        return 0
     if dry_run and cmd in ("status", "cancel"):
         die("--dry-run only applies when scheduling")
 
+    offset_at_start = sleep_offset()
     locked()
+    # If the timer fired while we waited for the lock, the machine has slept since this
+    # command was typed/clicked. Don't create a schedule that would surprise you on return.
+    if cmd != "status" and sleep_offset() - offset_at_start > SLEPT_SLACK:
+        die("the machine suspended while this command waited; not changing anything")
     if cmd == "status":
         print_status(as_json)
     elif cmd == "cancel":

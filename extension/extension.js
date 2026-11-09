@@ -260,8 +260,12 @@ export default class SuspendLaterExtension extends Extension {
             this._apply({fatal: 'suspend-later CLI not found on PATH or in ~/.local/bin (run install.sh)'});
             return;
         }
-        const seq = ++this._seq;
         const isAction = args[0] !== 'status';
+        // One action at a time, so clicks can't run out of order (e.g. a Cancel landing
+        // before the schedule clicked just before it). Actions take a fraction of a second.
+        if (isAction && this._actions)
+            return;
+        const seq = ++this._seq;
         let proc;
         try {
             proc = Gio.Subprocess.new([cli, ...args, '--json'],
