@@ -1,0 +1,11 @@
+.suspend-later-panel { spacing: 4px; }
+.suspend-later-panel .system-status-icon { opacity: 0.55; }
+.suspend-later-active .suspend-later-panel .system-status-icon { opacity: 1; }
+.suspend-later-error .suspend-later-panel { color: rgb(224, 120, 79); }
+
+.suspend-later-header { font-weight: bold; }
+.suspend-later-note { color: rgba(255, 255, 255, 0.6); font-size: 0.9em; }
+.suspend-later-row-title { min-width: 80px; color: rgba(255, 255, 255, 0.7); }
+.suspend-later-buttons { spacing: 6px; }
+.suspend-later-button { padding: 4px 10px; min-width: 44px; }
+.popup-menu-item:insensitive .suspend-later-header { color: rgba(255, 255, 255, 0.95); }

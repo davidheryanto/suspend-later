@@ -7,9 +7,13 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
 - `bin/suspend-later` — single-file Python CLI (stdlib only, `/usr/bin/python3`). The **only**
   thing that touches systemd. Schedule = transient user timer `suspend-later.timer` running
   `bin/suspend-later _fire <sleep-offset>`.
-- Planned: `extension/` — GNOME Shell panel indicator that only spawns the CLI and parses
-  `status --json` (same pattern as `../codexbar-gnome`). Must stay a thin UI: no timers of its
-  own that suspend, so a broken/disabled extension never loses or fires a schedule.
+- `extension/` — GNOME Shell panel indicator (UUID `suspend-later@davidheryanto`) that only
+  spawns the CLI with `--json` and draws the result (same pattern as `../codexbar-gnome`). Must
+  stay a thin UI: no timers of its own that suspend, so a broken/disabled extension never loses
+  or fires a schedule. Status reads are skipped while an action is in flight (race).
+- `dev/headless-capture.sh` — throwaway gnome-shell on Xvfb; gate before any logout/login.
+  It runs stock GNOME, not Dash to Panel — see `../codexbar-gnome/CLAUDE.md` gotchas
+  (D2P flips vertical `St.BoxLayout`s; lock screen disables/enables extensions).
 
 ## Rules
 1. Keep it small and boring. systemd is the source of truth; no state files.
@@ -17,6 +21,14 @@ desktop, so long jobs (e.g. Claude Code) keep running after they leave home.
    `_fire 0 --dry-run` exercises the stale-after-sleep guard (the machine has slept since boot).
 3. Sleep guard: `CLOCK_BOOTTIME - CLOCK_MONOTONIC` = seconds slept since boot. Recorded at
    schedule time in the ExecStart args; if it grew by > 5 s, the schedule is stale and dropped.
+
+## Status (2026-11-09)
+- CLI done and dry-run tested (schedule/extend/clock/cancel/fire/stale guard/failed fire).
+- Extension passes headless smoke test (active + idle states, lock cycle). Not yet loaded in
+  the real session (needs logout/login); menu button clicks untested live.
+- **The real suspend path has not run yet** — owner to try `suspend-later 20s` once.
+  Watch for: gnome-session holds a `block` sleep inhibitor ("user session inhibited");
+  same uid, so expected to be ignored by logind, but unverified.
 
 ## Verified facts
 - `systemctl --user list-timers <timer> -o json` → `next` is the deadline in **realtime µs**

@@ -1,0 +1,9 @@
+{
+  "uuid": "suspend-later@davidheryanto",
+  "name": "Suspend Later",
+  "description": "Panel countdown and controls for a scheduled suspend. A thin front-end for the suspend-later CLI, which owns the schedule as a systemd user timer.",
+  "shell-version": ["48", "49", "50"],
+  "url": "https://github.com/davidheryanto/suspend-later",
+  "version": 1,
+  "version-name": "1.0.0"
+}
