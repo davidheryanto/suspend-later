@@ -45,7 +45,7 @@ Add `--json` to any command to get the status as JSON.
 
 A moon icon in the top bar.
 
-- **While a suspend is scheduled,** it shows the time left, like `☾ 58m`.
+- **While a suspend is scheduled,** it shows the time left next to the moon, like `58m`.
 - **Click it** to see when the suspend happens, and to:
   - **Suspend in** 30m, 1h, 2h, or 3h
   - **Extend** by 15m, 30m, 1h, or 2h
