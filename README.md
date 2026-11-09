@@ -90,3 +90,7 @@ When nothing is scheduled: `{"active": false}`. If the last suspend attempt fail
 `dev/headless-capture.sh` starts a throwaway GNOME Shell on a virtual display, checks that the
 extension loads without errors, and saves a screenshot in `scratch/`. Run it before logging out
 to test extension changes.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
